@@ -1,0 +1,9 @@
+node_modules/
+certs/
+ecosystem.config.js
+.env
+*.pem
+*.key
+*.p12
+*.jks
+datos/
