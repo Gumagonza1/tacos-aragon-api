@@ -18,6 +18,10 @@ if (!CFO_BASE || !CFO_TOKEN) {
 }
 const PENDIENTES_PATH = path.join(__dirname, '../datos/pendientes_contabilidad.json');
 
+const TIPOS_INGRESO = ['ventas', 'otros'];
+const TIPOS_GASTO   = ['nomina', 'insumos', 'servicios', 'otros'];
+const MAX_CONCEPTO  = 200;
+
 function leerPendientes() {
   try { return JSON.parse(fs.readFileSync(PENDIENTES_PATH, 'utf8')); }
   catch { return []; }
@@ -38,11 +42,28 @@ router.get('/pendientes', (req, res) => {
 router.post('/pendientes/resolver', async (req, res) => {
   const { idx, accion, tipo, concepto, deducible = 1 } = req.body;
   if (idx === undefined || !accion) return res.status(400).json({ error: 'idx y accion requeridos' });
+  if (!['ingreso', 'gasto', 'ignorar'].includes(accion)) {
+    return res.status(400).json({ error: 'accion inválida' });
+  }
+  if (concepto !== undefined) {
+    if (typeof concepto !== 'string' || concepto.length > MAX_CONCEPTO) {
+      return res.status(400).json({ error: 'concepto inválido o demasiado largo' });
+    }
+  }
+  if (accion === 'ingreso' && tipo && !TIPOS_INGRESO.includes(tipo)) {
+    return res.status(400).json({ error: 'tipo de ingreso inválido' });
+  }
+  if (accion === 'gasto' && tipo && !TIPOS_GASTO.includes(tipo)) {
+    return res.status(400).json({ error: 'tipo de gasto inválido' });
+  }
 
   const lista = leerPendientes();
-  if (idx < 0 || idx >= lista.length) return res.status(404).json({ error: 'índice fuera de rango' });
+  const idxNum = parseInt(idx);
+  if (isNaN(idxNum) || idxNum < 0 || idxNum >= lista.length) {
+    return res.status(404).json({ error: 'índice fuera de rango' });
+  }
 
-  const item = lista[idx];
+  const item = lista[idxNum];
 
   try {
     if (accion === 'ingreso') {
@@ -67,12 +88,13 @@ router.post('/pendientes/resolver', async (req, res) => {
     }
     // 'ignorar' no crea registro, solo elimina
 
-    lista.splice(idx, 1);
+    lista.splice(idxNum, 1);
     escribirPendientes(lista);
     res.json({ ok: true, restantes: lista.length });
 
   } catch (e) {
-    res.status(500).json({ error: e.response?.data?.detail || e.message });
+    console.error('[contabilidad/resolver]', e.message);
+    res.status(500).json({ error: 'Error al registrar el movimiento' });
   }
 });
 

@@ -12,6 +12,7 @@ const cors       = require('cors');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const http       = require('http');
+const crypto     = require('crypto');
 const { WebSocketServer } = require('ws');
 const cfg        = require('./config');
 const auth       = require('./middleware/auth');
@@ -19,14 +20,34 @@ const auth       = require('./middleware/auth');
 const app    = express();
 const server = http.createServer(app);
 
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:3000'];
+
 // ─── WebSocket para actualizaciones en tiempo real ───────────────────────────
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  verifyClient: ({ req }, done) => {
+    const token = new URL(req.url, 'http://localhost').searchParams.get('token');
+    if (!token) { done(false, 401, 'No autorizado'); return; }
+    try {
+      const bufA = Buffer.from(token);
+      const bufB = Buffer.from(cfg.API_TOKEN);
+      if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+        done(true);
+      } else {
+        console.warn(`[ws] Conexión rechazada por token inválido`);
+        done(false, 401, 'No autorizado');
+      }
+    } catch {
+      done(false, 401, 'No autorizado');
+    }
+  },
+});
 const clients = new Set();
 
-wss.on('connection', (ws, req) => {
-  const token = new URL(req.url, 'http://localhost').searchParams.get('token');
-  if (token !== cfg.API_TOKEN) { ws.close(4001, 'No autorizado'); return; }
-
+wss.on('connection', (ws) => {
   clients.add(ws);
   ws.on('close', () => clients.delete(ws));
   ws.send(JSON.stringify({ tipo: 'conectado', mensaje: 'API Tacos Aragón lista' }));
@@ -41,13 +62,18 @@ function broadcast(data) {
 app.locals.broadcast = broadcast;
 
 // ─── Middlewares ─────────────────────────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet());
 app.use(cors({
-  origin: '*',                   // La app móvil puede venir de cualquier IP
+  origin: (origin, callback) => {
+    // Permitir peticiones sin origin (apps móviles, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS: origen no permitido'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Log todas las peticiones entrantes
 app.use((req, _res, next) => {
@@ -55,13 +81,35 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Rate limiting global
-app.use(rateLimit({
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+// Límite global
+const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-}));
+  message: { error: 'Demasiadas peticiones, intenta más tarde' },
+});
+
+// Límite estricto para endpoints de IA (caro y lento)
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Límite de consultas al agente alcanzado' },
+});
+
+// Límite para facturación (operación fiscal crítica)
+const facturacionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Límite de operaciones de facturación alcanzado' },
+});
+
+app.use(globalLimiter);
 
 // ─── Health check (sin auth) ─────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -75,11 +123,13 @@ app.get('/health', (req, res) => {
 
 // ─── Rutas autenticadas ───────────────────────────────────────────────────────
 app.use('/api', auth);
-app.use('/api/dashboard',   require('./routes/dashboard'));
-app.use('/api/ventas',      require('./routes/ventas'));
-app.use('/api/whatsapp',    require('./routes/whatsapp'));
-app.use('/api/facturar',    require('./routes/facturacion'));
-app.use('/api/agente',      require('./routes/agente'));
+app.use('/api/dashboard',    require('./routes/dashboard'));
+app.use('/api/ventas',       require('./routes/ventas'));
+app.use('/api/whatsapp',     require('./routes/whatsapp'));
+app.use('/api/facturar',     facturacionLimiter, require('./routes/facturacion'));
+app.use('/api/agente/chat',  aiLimiter);
+app.use('/api/agente/voz',   aiLimiter);
+app.use('/api/agente',       require('./routes/agente'));
 app.use('/api/contabilidad', require('./routes/contabilidad'));
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────
@@ -87,6 +137,10 @@ app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
+  // No exponer detalles de error en producción
+  if (err.message && err.message.startsWith('CORS')) {
+    return res.status(403).json({ error: 'Origen no permitido' });
+  }
   console.error('[ERROR]', err);
   res.status(500).json({ error: 'Error interno del servidor' });
 });

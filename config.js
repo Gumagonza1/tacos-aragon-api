@@ -8,7 +8,6 @@ const fs   = require('fs');
 const path = require('path');
 
 // Path to shared data folder. Set DATOS_PATH in your ecosystem.config.js.
-// Example: DATOS_PATH=C:\Users\...\bot-tacos\datos
 const DATOS = process.env.DATOS_PATH || '';
 
 function leer(archivo) {
@@ -20,11 +19,25 @@ function leer(archivo) {
   }
 }
 
+// ─── Validaciones de inicio obligatorias ─────────────────────────────────────
 if (!process.env.API_TOKEN) {
   console.error('[config] ERROR: API_TOKEN is not set. Configure it in ecosystem.config.js or .env before starting.');
   process.exit(1);
 }
 
+const LOYVERSE_TOKEN = process.env.LOYVERSE_TOKEN || leer('loyverse_token.txt');
+if (!LOYVERSE_TOKEN) {
+  console.error('[config] ERROR: LOYVERSE_TOKEN is not set (env var or datos/loyverse_token.txt).');
+  process.exit(1);
+}
+
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || leer('anthropic_key.txt');
+if (!ANTHROPIC_KEY) {
+  console.error('[config] ERROR: ANTHROPIC_KEY is not set (env var or datos/anthropic_key.txt).');
+  process.exit(1);
+}
+
+// ─── Config exportada ─────────────────────────────────────────────────────────
 const cfg = {
   // ── Server port ───────────────────────────────────────────────
   PORT: process.env.PORT || 3001,
@@ -33,7 +46,7 @@ const cfg = {
   API_TOKEN: process.env.API_TOKEN,
 
   // ── Loyverse ─────────────────────────────────────────────────
-  LOYVERSE_TOKEN:     process.env.LOYVERSE_TOKEN     || leer('loyverse_token.txt'),
+  LOYVERSE_TOKEN,
   LOYVERSE_STORE_ID:  process.env.LOYVERSE_STORE_ID  || leer('loyverse_store_id.txt'),
   LOYVERSE_BASE:      'https://api.loyverse.com/v1.0',
 
@@ -41,7 +54,7 @@ const cfg = {
   GEMINI_KEY: process.env.GEMINI_KEY || leer('llave ia.txt'),
 
   // ── Anthropic (main agent) ────────────────────────────────────
-  ANTHROPIC_KEY: process.env.ANTHROPIC_KEY || leer('anthropic_key.txt'),
+  ANTHROPIC_KEY,
 
   // ── WhatsApp bot shared data paths ───────────────────────────
   MEMORIA_CHAT_PATH:  DATOS ? path.join(DATOS, 'memoria_chat.json') : null,

@@ -7,9 +7,8 @@ const fs   = require('fs');
 const path = require('path');
 const cfg  = require('../config');
 
-// Ruta a los archivos del bot
-const BOT_PATH = path.join('C:', 'Users', 'gumaro_gonzalez', 'Desktop', 'bot-tacos');
-const PAUSA_FILE = path.join(BOT_PATH, 'datos', 'pausas.json');
+// Ruta a los archivos del bot (viene de la variable DATOS_PATH en el entorno)
+const PAUSA_FILE = cfg.DATOS_PATH ? path.join(cfg.DATOS_PATH, 'pausas.json') : null;
 
 function leerMemoria() {
   try {
@@ -21,6 +20,7 @@ function leerMemoria() {
 }
 
 function leerPausas() {
+  if (!PAUSA_FILE) return {};
   try {
     return JSON.parse(fs.readFileSync(PAUSA_FILE, 'utf8'));
   } catch {
@@ -29,6 +29,7 @@ function leerPausas() {
 }
 
 function escribirPausas(pausas) {
+  if (!PAUSA_FILE) return;
   fs.writeFileSync(PAUSA_FILE, JSON.stringify(pausas, null, 2));
 }
 

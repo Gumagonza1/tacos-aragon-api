@@ -82,13 +82,15 @@ router.get('/', async (req, res) => {
     const { desde, hasta, periodo, tipo_pago, dining, employee_id, limit, sin_reembolsos } = req.query;
     const { desde: desdeEfectivo, hasta: hastaEfectivo } = seleccionarRango(periodo, desde, hasta, 7);
 
+    const limitVal = Math.min(parseInt(limit) || 250, 500);
+
     const recibos = await loyverse.ventasFiltradas({
       desde:          desdeEfectivo,
       hasta:          hastaEfectivo,
       tipo_pago,
       dining,
       employee_id,
-      limit:          parseInt(limit) || 250,
+      limit:          limitVal,
       sin_reembolsos: sin_reembolsos === 'true',
     });
 
@@ -96,7 +98,7 @@ router.get('/', async (req, res) => {
     res.json({ recibos, resumen, total: recibos.length });
   } catch (err) {
     console.error('[ventas]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error al obtener ventas' });
   }
 });
 
@@ -106,10 +108,13 @@ router.get('/grafica', async (req, res) => {
     const { desde, hasta, agrupar = 'dia', periodo } = req.query;
     const { desde: desdeEfectivo, hasta: hastaEfectivo } = seleccionarRango(periodo, desde, hasta, 29);
 
-    const datos = await loyverse.ventasPorPeriodo(desdeEfectivo, hastaEfectivo, agrupar);
+    const agrupaciones = ['dia', 'hora', 'semana', 'mes'];
+    const agruparVal   = agrupaciones.includes(agrupar) ? agrupar : 'dia';
+    const datos = await loyverse.ventasPorPeriodo(desdeEfectivo, hastaEfectivo, agruparVal);
     res.json(datos);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ventas/grafica]', err.message);
+    res.status(500).json({ error: 'Error al obtener gráfica' });
   }
 });
 
@@ -150,7 +155,7 @@ router.get('/resumen', async (req, res) => {
     });
   } catch (err) {
     console.error('[ventas/resumen]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error al obtener resumen de ventas' });
   }
 });
 
@@ -186,7 +191,8 @@ router.get('/empleados-ventas', async (req, res) => {
       empleados: ranking,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ventas/empleados-ventas]', err.message);
+    res.status(500).json({ error: 'Error al obtener ventas por empleado' });
   }
 });
 
@@ -196,7 +202,8 @@ router.get('/empleados', async (req, res) => {
     const empleados = await loyverse.obtenerEmpleados();
     res.json(empleados);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ventas/empleados]', err.message);
+    res.status(500).json({ error: 'Error al obtener empleados' });
   }
 });
 
@@ -206,7 +213,8 @@ router.get('/tipos-pago', async (req, res) => {
     const tipos = await loyverse.obtenerTiposPago();
     res.json(tipos);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ventas/tipos-pago]', err.message);
+    res.status(500).json({ error: 'Error al obtener tipos de pago' });
   }
 });
 
@@ -255,7 +263,8 @@ router.get('/por-producto', async (req, res) => {
       coincidencias,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ventas/por-producto]', err.message);
+    res.status(500).json({ error: 'Error al buscar por producto' });
   }
 });
 
@@ -323,16 +332,21 @@ router.get('/cierres', async (req, res) => {
     });
   } catch (err) {
     console.error('[ventas/cierres]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error al obtener cierres de caja' });
   }
 });
 
 // GET /api/ventas/ticket/:numero
+const TICKET_RE = /^[a-zA-Z0-9_-]{1,50}$/;
 router.get('/ticket/:numero', async (req, res) => {
+  if (!TICKET_RE.test(req.params.numero)) {
+    return res.status(400).json({ error: 'Número de ticket inválido' });
+  }
   try {
     const recibo = await loyverse.obtenerRecibo(req.params.numero);
     res.json(recibo);
   } catch (err) {
+    console.error('[ventas/ticket]', err.message);
     res.status(404).json({ error: 'Ticket no encontrado' });
   }
 });
