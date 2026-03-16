@@ -57,6 +57,9 @@ const cfg = {
   TAX_BOT_PATH:  process.env.TAX_BOT_PATH  || '',
   FISCAL_PATH:   process.env.FISCAL_PATH   || '',
 
+  // ── Shared data folder (bot-tacos/datos) ─────────────────────
+  DATOS_PATH: DATOS,
+
   // ── Business data ─────────────────────────────────────────────
   NEGOCIO: {
     nombre:     'Tacos Aragón',

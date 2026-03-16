@@ -64,7 +64,7 @@ async function ventasPorPeriodo(desde, hasta, agrupar = 'dia') {
 }
 
 /** Recibos con filtros opcionales */
-async function ventasFiltradas({ desde, hasta, tipo_pago, dining, employee_id, limit = 100 }) {
+async function ventasFiltradas({ desde, hasta, tipo_pago, dining, employee_id, limit = 100, sin_reembolsos = false }) {
   const params = {
     created_at_min: desde,
     created_at_max: hasta,
@@ -74,16 +74,28 @@ async function ventasFiltradas({ desde, hasta, tipo_pago, dining, employee_id, l
 
   let recibos = await paginar('/receipts', params);
 
-  // Filtros client-side (Loyverse no los soporta todos en query)
+  // Marcar reembolsos: Loyverse los devuelve con total_money < 0 y/o campo refund_for
+  const numerosReembolsados = new Set(
+    recibos.filter(r => r.refund_for).map(r => r.refund_for)
+  );
+  recibos = recibos.map(r => ({
+    ...r,
+    es_reembolso:  !!(r.refund_for || r.total_money < 0),
+    reembolsado:   numerosReembolsados.has(r.receipt_number),
+    canal:         resolverCanal(r),
+  }));
+
+  // Filtros client-side
   if (tipo_pago) {
     recibos = recibos.filter(r =>
       r.payments?.some(p => p.payment_type_id === tipo_pago)
     );
   }
   if (dining) {
-    recibos = recibos.filter(r =>
-      (r.dining_option || '').toLowerCase().includes(dining.toLowerCase())
-    );
+    recibos = recibos.filter(r => r.canal.includes(dining.toLowerCase()));
+  }
+  if (sin_reembolsos) {
+    recibos = recibos.filter(r => !r.es_reembolso && !r.reembolsado);
   }
 
   return recibos;
@@ -111,34 +123,71 @@ async function obtenerItems() {
   return paginar('/items');
 }
 
+/**
+ * Cierres de caja (shifts) con totales de efectivo, ventas netas, descuentos, etc.
+ * @param {string} [desde]  ISO datetime (opened_at_min)
+ * @param {string} [hasta]  ISO datetime (opened_at_max)
+ */
+async function obtenerShifts(desde, hasta) {
+  const params = {};
+  if (desde) params.created_at_min = desde;
+  if (hasta) params.created_at_max = hasta;
+  return paginar('/shifts', params);
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers de cálculo
 // ────────────────────────────────────────────────────────────────────────────
 
-function calcularResumen(recibos) {
-  const total    = recibos.reduce((s, r) => s + (r.total_money || 0), 0);
-  const pedidos  = recibos.length;
-  const ticket   = pedidos > 0 ? total / pedidos : 0;
+/**
+ * Determina el canal de venta de un recibo.
+ * Loyverse ignora el campo dining_option al guardar, así que el bot
+ * escribe el tipo en la nota: "DOMICILIO | WA ..." o "RECOGER | WA ..."
+ */
+function resolverCanal(r) {
+  if (r.dining_option) return r.dining_option.toLowerCase();
+  const nota = (r.note || '').toUpperCase();
+  if (nota.startsWith('DOMICILIO')) return 'domicilio';
+  if (nota.startsWith('RECOGER'))   return 'recoger';
+  return 'presencial';
+}
 
-  // Por tipo de pago
+function calcularResumen(recibos) {
+  // Separar reembolsos (si ya vienen marcados del filtrado) o detectarlos aquí
+  const numerosReembolsados = new Set(
+    recibos.filter(r => r.refund_for).map(r => r.refund_for)
+  );
+  const ventas     = recibos.filter(r => !(r.es_reembolso ?? (r.refund_for || r.total_money < 0)));
+  const reembolsos = recibos.filter(r =>   (r.es_reembolso ?? (r.refund_for || r.total_money < 0)));
+
+  const totalBruto     = ventas.reduce((s, r) => s + (r.total_money || 0), 0);
+  const totalReembolso = reembolsos.reduce((s, r) => s + Math.abs(r.total_money || 0), 0);
+  const total          = totalBruto - totalReembolso;
+
+  // Pedidos netos: ventas que no fueron reembolsadas
+  const pedidosNetos = ventas.filter(r => !numerosReembolsados.has(r.receipt_number)).length;
+  const ticket       = pedidosNetos > 0 ? total / pedidosNetos : 0;
+
+  // Por tipo de pago (solo ventas, no reembolsos)
   const porPago = {};
-  recibos.forEach(r => {
+  ventas.forEach(r => {
     (r.payments || []).forEach(p => {
       const id = p.payment_type_id || 'desconocido';
       porPago[id] = (porPago[id] || 0) + (p.money_amount || 0);
     });
   });
 
-  // Por canal (dining_option)
+  // Por canal (dining_option o note del bot "DOMICILIO|WA..." / "RECOGER|WA...")
+  // Solo ventas no reembolsadas
   const porCanal = {};
-  recibos.forEach(r => {
-    const canal = r.dining_option || 'presencial';
+  ventas.filter(r => !numerosReembolsados.has(r.receipt_number)).forEach(r => {
+    const canal = r.canal || resolverCanal(r);
     porCanal[canal] = (porCanal[canal] || 0) + 1;
   });
 
-  // Top 5 productos
+  // Top 5 productos (solo ventas netas)
   const prod = {};
-  recibos.forEach(r => {
+  ventas.filter(r => !numerosReembolsados.has(r.receipt_number)).forEach(r => {
     (r.line_items || []).forEach(li => {
       const k = li.item_name || li.item_id;
       prod[k] = (prod[k] || 0) + (li.quantity || 1);
@@ -149,16 +198,31 @@ function calcularResumen(recibos) {
     .slice(0, 5)
     .map(([nombre, cantidad]) => ({ nombre, cantidad }));
 
-  return { total, pedidos, ticketPromedio: ticket, porPago, porCanal, topProductos };
+  return {
+    total,
+    totalBruto,
+    totalReembolso,
+    pedidos:         pedidosNetos,
+    reembolsosCount: reembolsos.length,
+    ticketPromedio:  ticket,
+    porPago,
+    porCanal,
+    topProductos,
+  };
 }
 
 function agruparVentas(recibos, agrupar) {
+  // Excluir reembolsos de las graficas (el total_money negativo ya los netea,
+  // pero queremos que el conteo de pedidos no los incluya)
+  const numerosReembolsados = new Set(
+    recibos.filter(r => r.refund_for).map(r => r.refund_for)
+  );
   const mapa = {};
   recibos.forEach(r => {
+    const esReembolso = r.es_reembolso ?? (r.refund_for || r.total_money < 0);
     const fecha = new Date(r.receipt_date || r.created_at);
     let clave;
     if (agrupar === 'hora') {
-      // Convertir UTC → GMT-7 para que las horas coincidan con la zona del negocio
       const horaLocal = (fecha.getUTCHours() - 7 + 24) % 24;
       clave = `${String(horaLocal).padStart(2, '0')}:00`;
     } else if (agrupar === 'semana') {
@@ -171,8 +235,12 @@ function agruparVentas(recibos, agrupar) {
       clave = fecha.toISOString().slice(0, 10);
     }
     if (!mapa[clave]) mapa[clave] = { fecha: clave, total: 0, pedidos: 0 };
-    mapa[clave].total   += r.total_money || 0;
-    mapa[clave].pedidos += 1;
+    // El total suma (los reembolsos tienen total negativo y se netean)
+    mapa[clave].total += r.total_money || 0;
+    // Pedidos: solo ventas netas (ni reembolso ni reembolsado)
+    if (!esReembolso && !numerosReembolsados.has(r.receipt_number)) {
+      mapa[clave].pedidos += 1;
+    }
   });
   return Object.values(mapa).sort((a, b) => a.fecha.localeCompare(b.fecha));
 }
@@ -186,5 +254,6 @@ module.exports = {
   obtenerTiposPago,
   obtenerRecibo,
   obtenerItems,
+  obtenerShifts,
   calcularResumen,
 };

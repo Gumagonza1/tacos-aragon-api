@@ -80,6 +80,7 @@ app.use('/api/ventas',      require('./routes/ventas'));
 app.use('/api/whatsapp',    require('./routes/whatsapp'));
 app.use('/api/facturar',    require('./routes/facturacion'));
 app.use('/api/agente',      require('./routes/agente'));
+app.use('/api/contabilidad', require('./routes/contabilidad'));
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
@@ -90,9 +91,11 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Error interno del servidor' });
 });
 
+// ─── Jobs programados ─────────────────────────────────────────────────────────
+require('./jobs/prellenar_contabilidad');
+
 // ─── Inicio ──────────────────────────────────────────────────────────────────
 server.listen(cfg.PORT, () => {
   console.log(`✅ Tacos Aragón API corriendo en puerto ${cfg.PORT}`);
   console.log(`   Health: http://localhost:${cfg.PORT}/health`);
-  console.log(`   WS:     ws://localhost:${cfg.PORT}?token=${cfg.API_TOKEN}`);
 });

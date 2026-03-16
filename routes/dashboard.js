@@ -1,40 +1,51 @@
 const router   = require('express').Router();
 const loyverse = require('../services/loyverse');
 
-// GET /api/dashboard – Resumen completo del negocio para la pantalla principal
+// Zona horaria del negocio: GMT-7
+const TZ_OFFSET_MS = -7 * 60 * 60 * 1000;
+
+// GET /api/dashboard – Resumen completo: hoy, semana (mar–hoy), mes; gráficas
 router.get('/', async (req, res) => {
   try {
-    const ahora = new Date();
+    const ahoraUTC   = Date.now();
+    const ahoraLocal = new Date(ahoraUTC + TZ_OFFSET_MS);
+    const ahoraISO   = new Date(ahoraUTC).toISOString();
 
-    // Hoy
-    const inicioHoy = new Date(ahora);
-    inicioHoy.setHours(0, 0, 0, 0);
-    const recibosHoy  = await loyverse.obtenerRecibos(inicioHoy.toISOString(), ahora.toISOString());
-    const resumenHoy  = loyverse.calcularResumen(recibosHoy);
+    // Hoy GMT-7
+    const inicioHoyLocal = new Date(ahoraLocal);
+    inicioHoyLocal.setUTCHours(0, 0, 0, 0);
+    const inicioHoyISO = new Date(inicioHoyLocal.getTime() - TZ_OFFSET_MS).toISOString();
 
-    // Semana actual (últimos 7 días)
-    const inicioSemana = new Date(ahora);
-    inicioSemana.setDate(ahora.getDate() - 6);
-    inicioSemana.setHours(0, 0, 0, 0);
-    const recibosSem  = await loyverse.obtenerRecibos(inicioSemana.toISOString(), ahora.toISOString());
-    const resumenSem  = loyverse.calcularResumen(recibosSem);
+    // Semana mar–hoy GMT-7
+    const diaSemana       = ahoraLocal.getUTCDay();
+    const diasDesdeMartes = diaSemana >= 2 ? diaSemana - 2 : diaSemana + 5;
+    const inicioSemanaLocal = new Date(ahoraLocal);
+    inicioSemanaLocal.setUTCDate(ahoraLocal.getUTCDate() - diasDesdeMartes);
+    inicioSemanaLocal.setUTCHours(0, 0, 0, 0);
+    const inicioSemanaISO = new Date(inicioSemanaLocal.getTime() - TZ_OFFSET_MS).toISOString();
 
-    // Mes actual
-    const inicioMes   = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const recibosMes  = await loyverse.obtenerRecibos(inicioMes.toISOString(), ahora.toISOString());
-    const resumenMes  = loyverse.calcularResumen(recibosMes);
+    // Mes GMT-7
+    const inicioMesLocal = new Date(ahoraLocal);
+    inicioMesLocal.setUTCDate(1);
+    inicioMesLocal.setUTCHours(0, 0, 0, 0);
+    const inicioMesISO = new Date(inicioMesLocal.getTime() - TZ_OFFSET_MS).toISOString();
 
-    // Gráfica de últimos 7 días (por día)
-    const graficaSemana = await loyverse.ventasPorPeriodo(inicioSemana.toISOString(), ahora.toISOString(), 'dia');
+    const [recibosHoy, recibosSem, recibosMes] = await Promise.all([
+      loyverse.obtenerRecibos(inicioHoyISO, ahoraISO),
+      loyverse.obtenerRecibos(inicioSemanaISO, ahoraISO),
+      loyverse.obtenerRecibos(inicioMesISO, ahoraISO),
+    ]);
 
-    // Gráfica de ventas por hora hoy
-    const graficaHoras = await loyverse.ventasPorPeriodo(inicioHoy.toISOString(), ahora.toISOString(), 'hora');
+    const [graficaSemana, graficaHoras] = await Promise.all([
+      loyverse.ventasPorPeriodo(inicioSemanaISO, ahoraISO, 'dia'),
+      loyverse.ventasPorPeriodo(inicioHoyISO, ahoraISO, 'hora'),
+    ]);
 
     res.json({
-      timestamp: ahora.toISOString(),
-      hoy:       resumenHoy,
-      semana:    resumenSem,
-      mes:       resumenMes,
+      timestamp: ahoraISO,
+      hoy:       loyverse.calcularResumen(recibosHoy),
+      semana:    loyverse.calcularResumen(recibosSem),
+      mes:       loyverse.calcularResumen(recibosMes),
       graficas: {
         semana: graficaSemana,
         horas:  graficaHoras,
