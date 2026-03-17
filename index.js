@@ -132,6 +132,9 @@ app.use('/api/agente/voz',   aiLimiter);
 app.use('/api/agente',       require('./routes/agente'));
 app.use('/api/contabilidad', require('./routes/contabilidad'));
 
+// ─── Rutas internas (orquestador) ────────────────────────────────────────────
+app.use('/interno', require('./routes/interno'));
+
 // ─── 404 ─────────────────────────────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
