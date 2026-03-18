@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[dashboard]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error al obtener el dashboard' });
   }
 });
 
