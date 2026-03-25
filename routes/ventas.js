@@ -60,6 +60,17 @@ function rangoMes() {
 }
 
 /** Selecciona rango según periodo o usa fechas explícitas */
+// Si se recibe solo YYYY-MM-DD (sin hora), convertir a UTC respetando GMT-7
+// (mismo patrón que rangoHoy: new Date(localTime).getTime() - TZ_OFFSET_MS)
+function padearFecha(str, esInicio) {
+  if (!str) return str;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const horaZ = esInicio ? 'T00:00:00.000Z' : 'T23:59:59.000Z';
+    return new Date(new Date(str + horaZ).getTime() - TZ_OFFSET_MS).toISOString();
+  }
+  return str;
+}
+
 function seleccionarRango(periodo, desde, hasta, defaultDays = 7) {
   if (periodo === 'hoy')    return rangoHoy();
   if (periodo === 'ayer')   return rangoAyer();
@@ -69,8 +80,8 @@ function seleccionarRango(periodo, desde, hasta, defaultDays = 7) {
   const defDesde = new Date(ahora);
   defDesde.setDate(ahora.getDate() - defaultDays);
   return {
-    desde: desde || defDesde.toISOString(),
-    hasta: hasta || ahora.toISOString(),
+    desde: padearFecha(desde, true)  || defDesde.toISOString(),
+    hasta: padearFecha(hasta, false) || ahora.toISOString(),
   };
 }
 
