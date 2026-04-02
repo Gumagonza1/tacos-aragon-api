@@ -6,4 +6,10 @@ ecosystem.config.js
 *.key
 *.p12
 *.jks
+*.cert
+*.sqlite
+*.db
+*.log
+*.bak
+*_token.txt
 datos/
