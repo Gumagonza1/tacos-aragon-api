@@ -31,12 +31,6 @@ if (!LOYVERSE_TOKEN) {
   process.exit(1);
 }
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || leer('anthropic_key.txt');
-if (!ANTHROPIC_KEY) {
-  console.error('[config] ERROR: ANTHROPIC_KEY is not set (env var or datos/anthropic_key.txt).');
-  process.exit(1);
-}
-
 // ─── Config exportada ─────────────────────────────────────────────────────────
 const cfg = {
   // ── Server port ───────────────────────────────────────────────
@@ -53,8 +47,9 @@ const cfg = {
   // ── Google Gemini (voice STT) ─────────────────────────────────
   GEMINI_KEY: process.env.GEMINI_KEY || leer('llave ia.txt'),
 
-  // ── Anthropic (main agent) ────────────────────────────────────
-  ANTHROPIC_KEY,
+  // ── CFO Agent (contabilidad + impuestos SAT) ──────────────────
+  CFO_BASE:  process.env.CFO_BASE  || 'http://localhost:3002',
+  CFO_TOKEN: process.env.CFO_TOKEN || '',
 
   // ── WhatsApp bot shared data paths ───────────────────────────
   MEMORIA_CHAT_PATH:  DATOS ? path.join(DATOS, 'memoria_chat.json') : null,
@@ -69,6 +64,10 @@ const cfg = {
   // ── SAT / Fiscal paths ────────────────────────────────────────
   TAX_BOT_PATH:  process.env.TAX_BOT_PATH  || '',
   FISCAL_PATH:   process.env.FISCAL_PATH   || '',
+
+  // ── Entregas (app del repartidor) ─────────────────────────────
+  ENTREGAS_URL:   process.env.ENTREGAS_URL   || 'http://tacos-aragon-entregas-entregas-1:3005',
+  ENTREGAS_TOKEN: process.env.ENTREGAS_TOKEN || process.env.API_TOKEN,
 
   // ── Shared data folder (bot-tacos/datos) ─────────────────────
   DATOS_PATH: DATOS,

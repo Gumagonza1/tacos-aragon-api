@@ -108,4 +108,27 @@ router.delete('/pendientes/:idx', (req, res) => {
   res.json({ ok: true, restantes: lista.length });
 });
 
+// ─── Proxy rutas CFO de contabilidad (ingresos, gastos, balance, chat, etc.) ──
+
+router.all('*', async (req, res) => {
+  try {
+    const { data, status, headers } = await axios({
+      method:  req.method,
+      url:     `${CFO_BASE}${req.originalUrl}`,
+      headers: { 'x-api-token': CFO_TOKEN },
+      data:    req.body,
+      timeout: 300000,
+      maxBodyLength:    Infinity,
+      maxContentLength: Infinity,
+    });
+    const ct = headers['content-type'];
+    if (ct) res.set('Content-Type', ct);
+    res.status(status).send(data);
+  } catch (err) {
+    const r = err.response;
+    if (r) res.status(r.status).send(r.data);
+    else res.status(502).json({ error: 'CFO agent no disponible' });
+  }
+});
+
 module.exports = router;

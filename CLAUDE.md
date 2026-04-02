@@ -11,7 +11,7 @@ Backend que conecta app móvil, bot de WhatsApp, Loyverse POS, Facturama y agent
 | `index.js` | Entry point, Express + WebSocket + rate limiting |
 | `config.js` | Carga de credenciales y validación |
 | `middleware/auth.js` | Autenticación timing-safe por token |
-| `routes/` | Endpoints: dashboard, ventas, whatsapp, facturacion, agente, contabilidad, interno |
+| `routes/` | Endpoints: dashboard, ventas, whatsapp, facturacion, agente, contabilidad, interno (recursos) |
 | `services/` | Lógica de negocio: loyverse, facturama, agente, whatsapp |
 | `jobs/` | Cron: prellenar_contabilidad (2:05 AM diario) |
 

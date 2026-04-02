@@ -82,10 +82,11 @@ app.use((req, _res, next) => {
 });
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
-// Límite global
+// Límite global — separado por token para que servicios internos no bloqueen a la app
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 300,
+  keyGenerator: (req) => req.headers['x-api-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones, intenta más tarde' },
@@ -130,6 +131,9 @@ app.use('/api/facturar',     facturacionLimiter, require('./routes/facturacion')
 app.use('/api/agente/chat',  aiLimiter);
 app.use('/api/agente/voz',   aiLimiter);
 app.use('/api/agente',       require('./routes/agente'));
+app.use('/api/impuestos',    require('./routes/cfo'));
+app.use('/api/inventario',   require('./routes/cfo'));
+app.use('/api/config',       require('./routes/cfo'));
 app.use('/api/contabilidad', require('./routes/contabilidad'));
 
 // ─── Rutas internas (orquestador) ────────────────────────────────────────────
@@ -150,6 +154,7 @@ app.use((err, req, res, _next) => {
 
 // ─── Jobs programados ─────────────────────────────────────────────────────────
 require('./jobs/prellenar_contabilidad');
+require('./jobs/archivar_tickets');
 
 // ─── Inicio ──────────────────────────────────────────────────────────────────
 server.listen(cfg.PORT, () => {
